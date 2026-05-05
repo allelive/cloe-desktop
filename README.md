@@ -54,7 +54,12 @@ She's not just a static widget. Powered by an AI agent, she **chooses her own ex
 - 📚 **Skill-based learning** — generate new expressions and actions with AI (Wan2.7 image-to-video + chroma key), registered as reusable skills
 - 🔄 **Agent lifecycle hooks** — mirrors Hermes agent state: `agent:start` → working, `agent:end` → idle, `session:start` → wave, `session:end` → kiss
 - 🤖 **Simple HTTP API** — one endpoint, one JSON field, no SDK needed
+- 🎮 **Context usage bar** — game-style health bar showing AI context window usage, color-coded green → yellow → orange → red with pulse
 - 🌐 **Android companion** — same character on your phone, connected over LAN or Tailscale
+
+<p align="center">
+  <img src="docs/context-usage-demo.png" alt="Context Usage Bar" width="280" />
+</p>
 
 ### Quick Peek
 
