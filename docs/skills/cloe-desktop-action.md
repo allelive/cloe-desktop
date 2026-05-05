@@ -114,7 +114,7 @@ curl -s http://localhost:19851/action -d '{"action":"speak","audio_url":"http://
 - **TTS 文本格式**：完整连贯句子，少用省略号/波浪号/感叹号
 - **打包后首次测试 /tts/ 路由必须 404 先排查**：如果刚 `./scripts/install.sh` 完，bridge 可能还没完全就绪（status 返回 clients=1 但 HTTP handler 还没注册完）。等 3-4 秒再测。如果持续 404，说明 Cloe.app 是旧版本没包含 `/tts/` 路由——必须重新 `./scripts/pack.sh --dir && ./scripts/install.sh`
 - **WAV 音频在 Electron new Audio() 会提前结束/不完整播放**：必须用 ffmpeg 转 MP3 后再触发 speak。`ffmpeg -y -i input.wav -c:a libmp3lame -q:a 4 output.mp3`
-- **⚠️ speak 只能一次发一条**：isSpeaking 锁允许被另一个 speak 覆盖（设计如此），不是完全阻塞。如果间隔不够连续发多条，后面的会截断前面的。**正确做法：长内容合并成一句 TTS 一次发完，不要拆成多条分发达。**
+- **⚠️ speak 只能一次发一条**：isSpeaking 锁允许被另一个 speak 覆盖（设计如此），不是完全阻塞。如果间隔不够连续发多条，后面的会截断前面的。**正确做法：长内容合并成一句 TTS 一次发完，不要拆成多条分开发。**
 - **MOSI TTS 返回 JSON 不是纯 WAV**：格式为 `{"audio_data": "<base64>"}`，需要 `resp.json()` → `base64.b64decode()` → 写文件，不能直接 `resp.content` 写文件
 
 ### speak 优先级（isSpeaking 锁）
@@ -123,7 +123,45 @@ renderer.js 有 `isSpeaking` 最高优先级锁——TTS 音频播放期间：
 - **所有其他 action 被 drop**（working、idle、nod 等全部忽略）
 - 唯一例外是另一个 `speak`（可覆盖）
 - 音频播完（`ended` 事件）自动解锁，恢复 idle 循环
-- plugin hooks（post_llm_call → idle）不会打断 TTS 播放
+
+> ⚠️ **已知 bug（2026-05-04 桌面端 / 2026-05-05 安卓端 v0.2.3）：isSpeaking ↔ isWorking 死锁导致 speak 被打断**
+> **Android 端同步修复（2026-05-05 v0.2.3）**：onCompletion 回调加 `isWorking=false` + 改用 `startIdleLoop()`（立刻切 GIF）替代 `scheduleNextIdle()`（8-15s 延迟）。根因相同：plugin 先发 working → isWorking=true → speak 结束后 scheduleNextIdle 检查 isWorking 为 true → return → speak.gif 卡住。
+>
+> **现象**：speak 播放后 GIF 切成 working，音频可能被中断或 GIF 状态错误。
+>
+> **根因分析**（通过 DevTools Console 日志确认）：
+> 1. plugin `pre_tool_call` 先发 `working` → `isWorking = true`
+> 2. speak 到达 → `isSpeaking = true`，开始播放（锁逻辑正确，此时锁开始生效）
+> 3. plugin `post_llm_call` 发 `idle` → 被 isSpeaking 锁 **成功 Dropped**（日志可见 `Dropped — speak in progress: idle`）
+> 4. **死锁形成**：`idle` 是唯一能重置 `isWorking` 的 action，但 idle 被 isSpeaking 锁全部 drop → `isWorking` 永远为 true
+> 5. speak 音频播完 → 回调调 `startIdleLoop()` → `scheduleNextIdle()` 检查 `isWorking` 为 true → **直接 return，不恢复 idle**
+>
+> **已应用的修复**（renderer.js speak 音频回调）：
+> ```javascript
+> playAudio(data.audio_url, () => {
+>   isSpeaking = false;
+>   isWorking = false;   // ← 新增：speak 结束后解锁 working，避免死锁
+>   isReacting = false;
+>   startIdleLoop();
+> });
+> ```
+>
+> **调试状态**：已修复并验证。根因确认是 isSpeaking ↔ isWorking 死锁。修复后连续 5 次 speak 测试全部通过，Console 日志确认所有非 speak action 被 Dropped。commit: `e465142`。
+>
+> **验证打包内容的技巧**：
+> - minify 后变量名改变，`grep "isSpeaking"` 找不到，用 `grep "speak in progress"` 或 `grep "Dropped"` 验证
+> - asar 提取：`cd /Applications/Cloe.app/Contents/Resources && npx asar extract app.asar /tmp/check && grep "speak in progress" /tmp/check/dist/assets/index-*.js`
+> - 注意：asar 内可能残留旧 hash 的 JS 文件（electron-builder 未清理），但 index.html 只引用新 hash
+
+### Plugin 生命周期（重要）
+
+- **Plugin 只在 Hermes 进程启动时加载一次**（`_discovered` 标记，加载过就不再加载）
+- `/new` 新建 session **不会**重新加载 plugin
+- 每个 message turn **不会**重新加载 plugin
+- 修改 `~/.hermes/plugins/cloe-desktop/plugin.yaml` 或 `handler.py` 后，必须**重启 Hermes gateway** 才能生效
+- plugin 文件不在 cloe-desktop git 仓库里，在 `~/.hermes/plugins/` 下（仓库 `docs/hermes-plugin/` 是参考副本，需手动同步）
+- 重启 gateway：kill 旧进程，`source ~/.hermes/hermes-agent/venv/bin/activate && python -m hermes_cli.main gateway run --replace`
+- `--replace` 会自动接管并杀掉旧 gateway 进程
 
 ### 生成 + 触发完整脚本（MOSI）
 
@@ -330,5 +368,6 @@ cd ~/work/cloe-desktop
 
 - 动作间隔至少 3-5 秒，太快会被打断
 - `clients=0` 时动作不生效
-- `action-sets.json` 和 `plugin-rules.json` 都支持热加载
+- `action-sets.json` 和 `plugin-rules.json` 都支持热加载（rules 有 5 秒 TTL 缓存）
+- **⚠️ plugin.yaml 的 hooks 列表不支持热加载**：Hermes 进程启动时一次性加载（`plugins.py` 第459行 `_discovered` 标记），整个进程生命周期内不再重读。修改 hooks 后必须**重启 Hermes gateway 进程**才能生效。`/new` 新建 session、每个消息 turn 都不会重新加载。重启方式：kill 旧 gateway 进程 + `source ~/.hermes/hermes-agent/venv/bin/activate && python -m hermes_cli.main gateway run --replace`
 - **打包后首次测试 /tts/ 路由必须 404 先排查**：刚 `./scripts/install.sh` 完 bridge 可能还没完全就绪（clients=1 但 HTTP handler 没注册完）。等 3-4 秒再测。持续 404 说明 Cloe.app 是旧版本，需重新 `./scripts/pack.sh --dir && ./scripts/install.sh`

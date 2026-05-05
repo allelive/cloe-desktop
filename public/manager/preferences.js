@@ -58,6 +58,18 @@ function renderPreferences() {
         </div>
         <div class="pref-item">
           <div class="pref-info">
+            <div class="pref-label">${I18n.t('prefs.contextBar')}</div>
+            <div class="pref-desc">${I18n.t('prefs.contextBarDesc')}</div>
+          </div>
+          <div class="pref-control">
+            <label class="toggle">
+              <input type="checkbox" id="pref-context-bar">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-info">
             <div class="pref-label">${I18n.t('prefs.windowPosition')}</div>
             <div class="pref-desc">${I18n.t('prefs.windowPositionDesc')}</div>
           </div>
@@ -144,6 +156,14 @@ function renderPreferences() {
   });
   minimizeTrayToggle.addEventListener('change', () => {
     localStorage.setItem('cloe-pref-minimize-tray', minimizeTrayToggle.checked);
+  });
+
+  // Context bar visibility toggle
+  const contextBarToggle = document.getElementById('pref-context-bar');
+  const savedContextBar = localStorage.getItem('cloe-context-bar-visible') !== 'false';
+  contextBarToggle.checked = savedContextBar;
+  contextBarToggle.addEventListener('change', () => {
+    localStorage.setItem('cloe-context-bar-visible', contextBarToggle.checked);
   });
 
   const apiKeyInput = document.getElementById('pref-dashscope-api-key');

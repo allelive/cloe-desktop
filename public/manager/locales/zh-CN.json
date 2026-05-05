@@ -194,7 +194,9 @@
     "videoModel": "视频生成模型",
     "videoModelDesc": "默认 wan2.7-i2v",
     "about": "关于",
-    "aboutDesc": "桌面宠物伴侣 · 让你的桌面更有趣"
+    "aboutDesc": "桌面宠物伴侣 · 让你的桌面更有趣",
+    "contextBar": "上下文用量条",
+    "contextBarDesc": "在人物上方显示 AI 上下文窗口的使用百分比，像游戏血条一样"
   },
   "pluginRules": {
     "throttle": "触发节流",

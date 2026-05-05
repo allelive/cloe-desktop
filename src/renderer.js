@@ -315,6 +315,47 @@ function handleAction(data) {
   }
 }
 
+// ==================== Context Usage HUD ====================
+
+const contextBar = document.getElementById('context-bar');
+const contextBarFill = document.getElementById('context-bar-fill');
+const contextBarText = document.getElementById('context-bar-text');
+
+function initContextBar() {
+  // Default: visible. localStorage only hides if explicitly set to 'false'.
+  const hidden = localStorage.getItem('cloe-context-bar-visible') === 'false';
+  if (!hidden) contextBar.classList.add('visible');
+
+  // Listen for changes from the settings panel (different window, same origin)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'cloe-context-bar-visible') {
+      const newVisible = e.newValue !== 'false';
+      contextBar.classList.toggle('visible', newVisible);
+    }
+  });
+}
+
+function updateContextBar(usagePct) {
+  const pct = Math.max(0, Math.min(100, usagePct));
+
+  contextBarFill.style.width = `${pct}%`;
+  contextBarText.textContent = `${Math.round(pct)}%`;
+
+  // Remove all state classes
+  contextBarFill.classList.remove('warn', 'danger', 'critical');
+
+  // Apply color based on usage
+  if (pct >= 90) {
+    contextBarFill.classList.add('critical');
+  } else if (pct >= 75) {
+    contextBarFill.classList.add('danger');
+  } else if (pct >= 50) {
+    contextBarFill.classList.add('warn');
+  }
+}
+
+initContextBar();
+
 // ==================== Window Drag ====================
 const container = document.getElementById('gif-container');
 let isDragging = false;
@@ -383,6 +424,9 @@ function connectWebSocket() {
           isReacting = false;
           startIdleLoop();
           console.log(`[set-config] Updated: ${Object.keys(GIF_ANIMATIONS).length} animations, ${IDLE_PLAYLIST.length} idle entries`);
+        } else if (msg.type === 'context-usage') {
+          // Context window usage HUD update
+          updateContextBar(msg.usage_pct);
         } else {
           handleAction(msg);
         }

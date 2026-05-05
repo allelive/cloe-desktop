@@ -1113,6 +1113,30 @@ function createBridgeServers() {
       return;
     }
 
+    // POST /context-usage — receive context usage from Hermes plugin, broadcast to WS clients
+    if (req.method === 'POST' && urlPath === '/context-usage') {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body || '{}');
+          // Broadcast to all WS clients (renderer will handle the display)
+          broadcastToClients({
+            type: 'context-usage',
+            usage_pct: data.usage_pct || 0,
+            prompt_tokens: data.prompt_tokens || 0,
+            context_limit: data.context_limit || 0,
+          });
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid JSON' }));
+        }
+      });
+      return;
+    }
+
     // --- Management API ---
     // GET /action-sets — list all sets
     if (req.method === 'GET' && req.url === '/action-sets') {

@@ -194,7 +194,9 @@
     "videoModel": "Video Generation Model",
     "videoModelDesc": "Default: wan2.7-i2v",
     "about": "About",
-    "aboutDesc": "Desktop pet companion · Make your desktop more fun"
+    "aboutDesc": "Desktop pet companion · Make your desktop more fun",
+    "contextBar": "Context Usage Bar",
+    "contextBarDesc": "Show AI context window usage percentage above the character, like a game health bar"
   },
   "pluginRules": {
     "throttle": "Throttle",
