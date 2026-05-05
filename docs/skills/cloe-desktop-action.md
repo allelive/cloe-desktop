@@ -114,6 +114,7 @@ curl -s http://localhost:19851/action -d '{"action":"speak","audio_url":"http://
 - **TTS 文本格式**：完整连贯句子，少用省略号/波浪号/感叹号
 - **打包后首次测试 /tts/ 路由必须 404 先排查**：如果刚 `./scripts/install.sh` 完，bridge 可能还没完全就绪（status 返回 clients=1 但 HTTP handler 还没注册完）。等 3-4 秒再测。如果持续 404，说明 Cloe.app 是旧版本没包含 `/tts/` 路由——必须重新 `./scripts/pack.sh --dir && ./scripts/install.sh`
 - **WAV 音频在 Electron new Audio() 会提前结束/不完整播放**：必须用 ffmpeg 转 MP3 后再触发 speak。`ffmpeg -y -i input.wav -c:a libmp3lame -q:a 4 output.mp3`
+- **⚠️ speak 只能一次发一条**：isSpeaking 锁允许被另一个 speak 覆盖（设计如此），不是完全阻塞。如果间隔不够连续发多条，后面的会截断前面的。**正确做法：长内容合并成一句 TTS 一次发完，不要拆成多条分发达。**
 - **MOSI TTS 返回 JSON 不是纯 WAV**：格式为 `{"audio_data": "<base64>"}`，需要 `resp.json()` → `base64.b64decode()` → 写文件，不能直接 `resp.content` 写文件
 
 ### speak 优先级（isSpeaking 锁）
