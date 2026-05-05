@@ -228,11 +228,51 @@ Cloe has first-class support for [Hermes](https://github.com/JakimLi/hermes) age
 ┌──────────────┐   hook events    ┌──────────────────┐   HTTP API   ┌──────────────┐
 │ Hermes Agent │ ───────────────▶ │ Gateway Hook     │ ───────────▶ │ Cloe Desktop │
 │              │ agent:start/end  │ handler.py       │  /action     │ (Electron)   │
-│              │ session:start/end│                  │              │              │
+│              │ session:start/end│ handler.py       │              │              │
 └──────────────┘                  └──────────────────┘              └──────────────┘
 ```
 
-The hook is at `~/.hermes/hooks/cloe-desktop/handler.py` and fires automatically — no manual triggering needed for state changes.
+#### What gets installed
+
+| Component | Source | Target | What it does |
+|-----------|--------|--------|-------------|
+| **Hook** | `docs/hermes-hook/` | `~/.hermes/hooks/cloe-desktop/` | Process-level events: agent start/end → working/idle |
+| **Plugin** | `docs/hermes-plugin/` | `~/.hermes/plugins/cloe-desktop/` | Session-level: tool expressions, keywords, context bar, wave/kiss |
+| **Skills** | `docs/skills/*.md` | `~/.hermes/skills/creative/` | Agent knowledge: action API, TTS, Android integration |
+
+#### Install (one command)
+
+```bash
+./scripts/install-hermes-integration.sh
+```
+
+This installs all three components. You can also install individually:
+
+```bash
+./scripts/install-hermes-integration.sh --hook     # hook only
+./scripts/install-hermes-integration.sh --plugin   # plugin only
+./scripts/install-hermes-integration.sh --skills   # skills only
+./scripts/install-hermes-integration.sh --uninstall  # remove everything
+```
+
+> **Existing installations are backed up** automatically (timestamped `.bak` directory).
+
+#### After installing
+
+The hook and plugin require a **gateway restart** to take effect:
+
+```bash
+source ~/.hermes/hermes-agent/venv/bin/activate
+python -m hermes_cli.main gateway run --replace
+```
+
+Plugin trigger rules (`~/.cloe/plugin-rules.json`) hot-reload within 5 seconds — no restart needed for rule changes.
+
+#### How it works
+
+- **Hook** (`handler.py` + `HOOK.yaml`): Fires on `agent:start`/`agent:end`/`agent:error` — locks the character into working mode while the agent processes, resumes idle when done.
+- **Plugin** (`handler.py` + `plugin.yaml`): Fires on session/tool/LLM lifecycle events — tool-specific expressions, keyword matching, context usage bar, session greetings.
+- **Skills**: Markdown documentation with YAML frontmatter that the AI agent reads to understand how to trigger animations, generate new expressions, and use TTS.
 
 ---
 
