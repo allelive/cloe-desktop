@@ -17,6 +17,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 BRIDGE_URL = "http://127.0.0.1:19851/action"
+CONTEXT_USAGE_URL = "http://127.0.0.1:19851/context-usage"
 STATUS_URL = "http://127.0.0.1:19851/status"
 
 # Config resolution: read dataDir from <dataDir>/config.json, default ~/.cloe
@@ -199,6 +200,26 @@ class CloeDesktopBridge:
         _trigger(action, audio)
         logger.debug("[cloe-desktop-plugin] → %s", action)
 
+    def _send_context_usage(self, usage_pct: float, prompt_tokens: int,
+                            context_limit: int) -> None:
+        """Send context usage data to the desktop bridge for HUD display."""
+        try:
+            payload = {
+                "usage_pct": round(usage_pct, 1),
+                "prompt_tokens": prompt_tokens,
+                "context_limit": context_limit,
+            }
+            data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(
+                CONTEXT_USAGE_URL,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=2)
+        except Exception as e:
+            logger.warning("[cloe-desktop-plugin] _send_context_usage failed: %s", e)
+
     @property
     def context_usage_pct(self) -> float:
         """Current context window usage as percentage (0-100)."""
@@ -238,6 +259,9 @@ class CloeDesktopBridge:
             "[cloe-desktop-plugin] context usage: %d/%d tokens (%.1f%%)",
             prompt_tokens, context_limit, usage_pct,
         )
+
+        # Send context usage data to desktop bridge for HUD display
+        self._send_context_usage(usage_pct, prompt_tokens, context_limit)
 
         # React to high context usage
         rules = self._rules()
@@ -338,8 +362,16 @@ class CloeDesktopBridge:
     # Session lifecycle
     # ------------------------------------------------------------------
 
+    def _reset_context_usage(self) -> None:
+        """Reset context usage tracking to initial state."""
+        self._last_prompt_tokens = 0
+        self._last_context_limit = 128_000
+        self._last_usage_pct = 0.0
+        self._send_context_usage(0.0, 0, 128_000)
+
     def on_session_start(self, session_id: str, model: str, platform: str) -> None:
-        """New session → wave hello."""
+        """New session → reset context usage + wave hello."""
+        self._reset_context_usage()
         self._trigger_action("wave", force=True)
 
     def on_session_end(self, session_id: str, completed: bool, interrupted: bool,
@@ -355,7 +387,8 @@ class CloeDesktopBridge:
             self._trigger_action("shake_head", force=True)
 
     def on_session_reset(self, session_id: str, platform: str) -> None:
-        """Session reset (e.g. /new) → wave hello again."""
+        """Session reset (e.g. /new) → reset context usage + wave hello."""
+        self._reset_context_usage()
         self._trigger_action("wave", force=True)
 
     # ------------------------------------------------------------------
