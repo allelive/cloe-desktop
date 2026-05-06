@@ -9,6 +9,9 @@ public/gifs/_work_*/
 
 # Intermediate generation files
 public/gifs/_work_*/
+public/gifs/*/_work_*/
+*_raw.gif
+palette_*.png
 reference_*.png
 *.bak
 docs/demo*.gif

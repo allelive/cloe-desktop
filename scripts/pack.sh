@@ -20,8 +20,25 @@ node ./node_modules/vite/bin/vite.js build
 # [2] 只拷贝运行时需要的文件（排除 _work_* 中间产物）
 echo "[2/3] 拷贝静态资源..."
 mkdir -p dist/gifs dist/audio dist/references dist/manager
-cp -f public/gifs/*.gif dist/gifs/
-cp -f public/audio/*.mp3 dist/audio/
+
+# GIFs: 拷贝顶层成品 .gif 文件（排除 _raw.gif）+ 递归拷贝子目录
+for gif in public/gifs/*.gif; do
+  [[ "$(basename "$gif")" == *_raw.gif ]] && continue
+  cp -f "$gif" dist/gifs/
+done
+for subdir in public/gifs/*/; do
+  dirname=$(basename "$subdir")
+  # 跳过 _work_* 中间产物目录
+  [[ "$dirname" == _work_* ]] && continue
+  mkdir -p "dist/gifs/$dirname"
+  # 只拷贝成品 .gif 文件（跳过 _raw.gif 和 _work_* 子目录）
+  for gif in "$subdir"*.gif; do
+    [[ "$(basename "$gif")" == *_raw.gif ]] && continue
+    cp -f "$gif" "dist/gifs/$dirname/" 2>/dev/null || true
+  done
+done
+
+cp -f public/audio/*.mp3 dist/audio/ 2>/dev/null || true
 cp -f public/references/*.png dist/references/ 2>/dev/null || true
 cp -rf public/manager/* dist/manager/
 cp -f public/action-sets.json dist/action-sets.json 2>/dev/null || true

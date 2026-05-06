@@ -20,16 +20,26 @@ export default defineConfig({
       apply: 'build',
       closeBundle() {
         const dest = path.resolve('dist');
-        const skipDirs = ['_work_actions', '_work_idle', '_work_working', '_work_smile'];
 
-        // Remove _work_* directories that Vite already copied
-        for (const dir of skipDirs) {
-          const dirPath = path.join(dest, 'gifs', dir);
-          if (fs.existsSync(dirPath)) {
-            fs.rmSync(dirPath, { recursive: true, force: true });
-            console.log(`[build-cleanup] Removed dist/gifs/${dir}`);
+        // Remove all _work_* directories recursively (Vite copies public/ wholesale)
+        function cleanWorkDirs(dir) {
+          if (!fs.existsSync(dir)) return;
+          for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, ent.name);
+            if (ent.isDirectory()) {
+              if (ent.name.startsWith('_work_')) {
+                fs.rmSync(full, { recursive: true, force: true });
+                console.log(`[build-cleanup] Removed ${full}`);
+              } else {
+                cleanWorkDirs(full);
+              }
+            } else if (ent.name.endsWith('_raw.gif') || ent.name.startsWith('palette_')) {
+              fs.unlinkSync(full);
+              console.log(`[build-cleanup] Removed ${full}`);
+            }
           }
         }
+        cleanWorkDirs(path.join(dest, 'gifs'));
         console.log('[build-cleanup] Done');
       },
     },
