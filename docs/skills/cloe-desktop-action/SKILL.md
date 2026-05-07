@@ -39,7 +39,27 @@ curl -s http://localhost:19851/action -d '{"action":"<ACTION_NAME>"}'
 
 ### 方式一：TTS 动态语音（推荐）
 
-链路：TTS 生成音频 → 保存到 `~/.cloe/audio_cache/` → bridge `/tts/` 路由 serve → speak 播放。
+链路：`generate_tts.py` 生成 MP3 → 保存到 `~/.cloe/audio_cache/` → bridge `/tts/` 路由 serve → speak 播放。
+
+#### 脚本：`scripts/generate_tts.py`
+
+**唯一正确的 TTS 调用方式**，自动读取 `~/.cloe/tts-config.json` 配置。
+
+```bash
+# 生成音频（输出 MP3 路径到 stdout）
+python3 scripts/generate_tts.py --text "要说的话"
+
+# 生成 + 自动触发桌面 speak 播放
+python3 scripts/generate_tts.py --text "要说的话" --speak
+
+# 指定输出路径
+python3 scripts/generate_tts.py --text "要说的话" --output /tmp/custom.mp3
+
+# 强制指定 provider
+python3 scripts/generate_tts.py --text "要说的话" --provider cosyvoice
+```
+
+stdout 只输出 MP3 文件路径，日志输出到 stderr。
 
 #### 配置 TTS Provider
 
@@ -49,7 +69,7 @@ curl -s http://localhost:19851/action -d '{"action":"<ACTION_NAME>"}'
 {
   "provider": "mosi",
   "mosi": {
-    "api_key": "***",
+    "api_key": "<MOSI_API_KEY>",
     "voice_id": "2036257587296473088",
     "url": "https://studio.mosi.cn/v1/audio/tts"
   },
@@ -65,23 +85,32 @@ curl -s http://localhost:19851/action -d '{"action":"<ACTION_NAME>"}'
 - `"mosi"` — MOSI 云端 TTS（可可音色，快 ~3s）**← 默认**
 - `"cosyvoice"` — 阿里云 CosyVoice（多音色可选）
 
-**MOSI 音色**（改 `voice_id`）：`2036257587296473088` — 陈可可（默认）
+#### MOSI API 调用规范（⚠️ 脚本已封装，一般不需要手动调）
 
-**CosyVoice 音色**（改 `voice`）：`longmiao`（可爱）、`loongstella`（年轻）、`loongbella`（甜美）、`longyue`（温柔）
+如果手动调用，**必须**按以下格式：
 
-#### 生成 + 播放步骤
-
-1. **生成音频**（用 terminal，SDK 依赖系统 Python）— 根据 `tts-config.json` 的 `provider` 自动选择引擎，输出到 `~/.cloe/audio_cache/tts_<timestamp>.wav`（mosi）或 `.mp3`（cosyvoice）
-2. **WAV 转 MP3**（Electron 的 `new Audio()` 对 WAV 播放不完整，必须转）：`ffmpeg -y -i input.wav -c:a libmp3lame -q:a 4 output.mp3`
-3. **触发 speak**：
-
-```bash
-curl -s http://localhost:19851/action -d '{"action":"speak","audio_url":"http://localhost:19851/tts/<FILENAME>.mp3"}'
+```python
+headers = {
+    "Authorization": f"Bearer {api_key}",  # ← 必须用 Bearer auth
+    "Content-Type": "application/json",
+}
+payload = {
+    "model": "moss-tts",        # ← 必须有
+    "text": text,
+    "voice_id": voice_id,
+    "sampling_params": {"temperature": 1.7, "top_p": 0.8, "top_k": 25},
+}
+resp = requests.post(url, json=payload, headers=headers)
+# 返回 {"audio_data": "<base64>"}，解码后是 WAV → 必须 ffmpeg 转 MP3
 ```
 
-**要点**：
+❌ 不带 `Authorization` header 或 body 不含 `model` 字段 → 401。
+
+#### 播放要点
+
 - TTS 文本用完整连贯句子，少用省略号/波浪号
-- MOSI 返回 JSON `{"audio_data":"<base64>"}`，需 `base64.b64decode()` 后写文件
+- MOSI 返回 WAV，脚本自动转 MP3（Electron `new Audio()` 播放 WAV 不完整）
+- 也可以手动 speak 已有音频：`curl -s http://localhost:19851/action -d '{"action":"speak","audio_url":"http://localhost:19851/tts/<FILENAME>.mp3"}'`
 - **speak 播放期间其他 action 被 drop，另一个 speak 可覆盖**——长内容合并成一句 TTS 一次发完
 
 ### 方式二：预录语音（`audio` 字段）
@@ -151,33 +180,23 @@ base64 编码后传 `data:audio/mpeg;base64,...`，curl 上限约 128KB。
 
 Cloe 可以自己生成新动作！完整链路：参考图 → AI 视频 → chromakey → 透明 GIF。
 
-脚本在 `scripts/` 目录下，数据目录统一为 `~/.cloe`。
-
-### 单个动作生成
+### 通过管理界面 API（全自动）
 
 ```bash
-# 默认绿幕
-python3 scripts/generate_gif_v2.py \
-  --action <动作名> \
-  --prompt "她微微嘟起嘴唇，表情可爱委屈，身体保持不动。纯绿色背景。电影质感，高清。" \
-  --duration 5
+# 异步生成，立即返回 202 + taskId
+curl -s -X POST http://localhost:19851/action-sets/default/generate-action \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "pout",
+    "prompt": "她微微嘟起嘴唇，表情可爱委屈，身体保持不动。纯绿色背景。电影质感，高清。",
+    "duration": 5
+  }'
 
-# 蓝幕模式（对黑发更友好）
-python3 scripts/generate_gif_v2.py \
-  --action <动作名> \
-  --prompt "..." \
-  --chromakey blue
+# 查询任务状态
+curl -s http://localhost:19851/generation-tasks/<taskId>
 ```
 
-输出自动到 `~/.cloe/gifs/<动作名>.gif`。
-
-### 批量生成（4路并行）
-
-编辑 `scripts/batch_generate_gifs.py` 的 `ACTIONS` 字典后：
-
-```bash
-python3 scripts/batch_generate_gifs.py
-```
+**自动完成**：生成 GIF → 更新 action-sets.json → 广播到 renderer。无需手动改代码。
 
 ### Prompt 写法要点
 
@@ -185,12 +204,12 @@ python3 scripts/batch_generate_gifs.py
 - **纯色背景**：末尾必须加"纯绿色背景"或"纯蓝色背景"
 - **电影质感，高清**：提高生成质量
 - **时长**：一般 3-5 秒（idle 3 秒，表情 5 秒）
+- 参考示例：`"她微微嘟起嘴唇，表情可爱委屈。身体保持不动。纯绿色背景。电影质感，高清。"`
 
 ### 已知限制
 
 - 每次生成耗时 ~3-5 分钟（百炼 API 异步轮询）
 - 绿幕对黑发有轻微残留，蓝幕效果更好
-- **必须用 terminal 执行**（PIL/numpy/scipy 依赖系统 Python），不要用 execute_code
 
 ## 注意事项
 
