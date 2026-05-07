@@ -180,7 +180,40 @@ base64 编码后传 `data:audio/mpeg;base64,...`，curl 上限约 128KB。
 
 Cloe 可以自己生成新动作！完整链路：参考图 → AI 视频 → chromakey → 透明 GIF。
 
-### 通过管理界面 API（全自动）
+### 方式一：脚本直接生成（推荐，不依赖后台服务）
+
+```bash
+# 单个生成（默认绿幕，输出到 ~/.cloe/gifs/{action}.gif）
+python3 scripts/generate_gif_v2.py \
+  --action pout \
+  --prompt "她微微嘟起嘴唇，表情可爱委屈，身体保持不动。纯绿色背景。电影质感，高清。"
+
+# 蓝幕模式（对黑发效果更好）
+python3 scripts/generate_gif_v2.py \
+  --action pout \
+  --prompt "她微微嘟起嘴唇，表情可爱委屈，身体保持不动。纯蓝色背景。电影质感，高清。" \
+  --chromakey blue
+
+# 指定参考图
+python3 scripts/generate_gif_v2.py \
+  --action wave \
+  --prompt "她开心地挥手打招呼，身体保持不动。纯蓝色背景。电影质感，高清。" \
+  --reference ~/.cloe/references/default.png
+
+# 自定义输出路径（不自动复制到 ~/.cloe/gifs/）
+python3 scripts/generate_gif_v2.py \
+  --action pout \
+  --prompt "..." \
+  --output /tmp/pout.gif --no-copy
+```
+
+**脚本自动完成**：压缩参考图（>4MB）→ 百炼 wan2.7-i2v 生成视频 → ffmpeg chromakey → Python 去色晕 → 透明 GIF → 复制到 `~/.cloe/gifs/`。
+
+**生成后**：测试播放 `curl -s http://localhost:19851/action -d '{"action":"pout"}'`
+
+> ⚠️ 脚本需要 `requests`、`PIL`、`numpy`、`scipy`，用系统 Python 跑（不用 execute_code）。
+
+### 方式二：管理界面 API（需 bridge 服务运行）
 
 ```bash
 # 异步生成，立即返回 202 + taskId
