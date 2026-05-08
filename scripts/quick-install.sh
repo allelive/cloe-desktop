@@ -57,13 +57,11 @@ get_latest_version() {
 
 get_asset_url() {
     local version="$1"
-    # universal DMG: Cloe-x.x.x-universal.dmg
     local pattern="${APP_NAME}-${version}-universal.dmg"
 
     local url
-    url=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${version}" \
-        | grep -o "\"browser_download_url\": *\"${pattern}\"" \
-        | sed -E 's/.*"([^"]+)".*/\1/')
+    url=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${version}" \
+        | python3 -c "import json,sys; [print(a['browser_download_url']) for a in json.load(sys.stdin).get('assets',[]) if a['name']=='${pattern}']" 2>/dev/null)
 
     if [[ -z "$url" ]]; then
         return 1
