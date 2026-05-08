@@ -46,27 +46,12 @@ CLOE_DATA_DIR="${HOME}/.cloe"
 get_latest_version() {
     local version
     version=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" \
-        | grep '"tag_name"' \
-        | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
+        | grep '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')
     if [[ -z "$version" ]]; then
         err "Failed to fetch latest version from GitHub"
         exit 1
     fi
     echo "$version"
-}
-
-get_asset_url() {
-    local version="$1"
-    local pattern="${APP_NAME}-${version}-universal.dmg"
-
-    local url
-    url=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/tags/v${version}" \
-        | python3 -c "import json,sys; [print(a['browser_download_url']) for a in json.load(sys.stdin).get('assets',[]) if a['name']=='${pattern}']" 2>/dev/null)
-
-    if [[ -z "$url" ]]; then
-        return 1
-    fi
-    echo "$url"
 }
 
 check_hermes() {
@@ -87,28 +72,23 @@ ok "macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown'), $(uname -m)"
 
 # ── Step 2: Download DMG ────────────────────────────────────
 step "2/5" "Downloading latest Cloe Desktop..."
-VERSION=$(get_latest_version)
-VERSION="${VERSION#v}"  # strip 'v' prefix — tag "v1.2.1" → DMG "1.2.1"
-ok "Latest version: ${BOLD}${VERSION}${NC}"
+TAG=$(get_latest_version)
+VERSION="${TAG#v}"  # strip 'v' prefix
+ok "Latest version: ${BOLD}${TAG}${NC}"
 
 DMG_NAME="${APP_NAME}-${VERSION}-universal.dmg"
 DMG_PATH="/tmp/${DMG_NAME}"
-
-DMG_URL=$(get_asset_url "$VERSION") || true
-
-if [[ -z "$DMG_URL" ]]; then
-    err "Universal DMG not found for version ${VERSION}"
-    echo ""
-    echo "  Available releases: https://github.com/${GITHUB_REPO}/releases"
-    exit 1
-fi
+DMG_URL="https://github.com/${GITHUB_REPO}/releases/download/${TAG}/${DMG_NAME}"
 
 if [[ -f "$DMG_PATH" ]]; then
     warn "Using cached: ${DMG_PATH}"
 else
     info "Downloading ${DMG_NAME}..."
-    curl -fSL --progress-bar -o "$DMG_PATH" "$DMG_URL"
-    ok "Downloaded to ${DMG_PATH}"
+    curl -fSL --progress-bar -o "$DMG_PATH" "$DMG_URL" || {
+        err "Download failed: ${DMG_URL}"
+        echo "  Check releases: https://github.com/${GITHUB_REPO}/releases"
+        exit 1
+    }
 fi
 
 # ── Step 3: Install App ─────────────────────────────────────
