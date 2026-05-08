@@ -90,6 +90,7 @@ ok "macOS $(sw_vers -productVersion 2>/dev/null || echo 'unknown'), $(uname -m)"
 # ── Step 2: Download DMG ────────────────────────────────────
 step "2/5" "Downloading latest Cloe Desktop..."
 VERSION=$(get_latest_version)
+VERSION="${VERSION#v}"  # strip 'v' prefix — tag "v1.2.1" → DMG "1.2.1"
 ok "Latest version: ${BOLD}${VERSION}${NC}"
 
 DMG_NAME="${APP_NAME}-${VERSION}-universal.dmg"
