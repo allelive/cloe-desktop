@@ -1608,6 +1608,8 @@ function createBridgeServers() {
     // GET /tts/:filename — serve audio files from audio_cache directory
     // Used by Hermes TTS pipeline: generate mp3 → save to ~/.cloe/audio_cache/ →
     // trigger speak with audio_url=http://localhost:19851/tts/filename.mp3
+    // Supports Range requests (206 Partial Content) — Chromium requires this
+    // for MP3 streaming; without it, playback truncates at ~10s.
     if (req.method === 'GET' && req.url.startsWith('/tts/')) {
       const filename = decodeURIComponent(req.url.slice(5));
       if (!filename || filename.includes('/') || filename.includes('..') || filename.includes('\0')) {
@@ -1622,12 +1624,45 @@ function createBridgeServers() {
         res.end('Not found');
         return;
       }
+      const stat = fs.statSync(filePath);
+      const fileSize = stat.size;
       const ext = path.extname(filename).toLowerCase();
       const mimeTypes = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.opus': 'audio/opus', '.ogg': 'audio/ogg' };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+      // Parse Range header
+      const rangeHeader = req.headers['range'];
+      if (rangeHeader) {
+        const match = rangeHeader.match(/^bytes=(\d+)-(\d*)$/);
+        if (match) {
+          const start = parseInt(match[1], 10);
+          const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+          if (start >= fileSize || end >= fileSize || start > end) {
+            res.writeHead(416, {
+              'Content-Range': `bytes */${fileSize}`,
+            });
+            res.end();
+            return;
+          }
+          const chunkSize = end - start + 1;
+          res.writeHead(206, {
+            'Content-Type': contentType,
+            'Content-Length': chunkSize,
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Cache-Control': 'no-cache',
+            'Accept-Ranges': 'bytes',
+          });
+          fs.createReadStream(filePath, { start, end }).pipe(res);
+          return;
+        }
+      }
+
+      // Full response with Accept-Ranges so the client knows Range is supported
       res.writeHead(200, {
-        'Content-Type': mimeTypes[ext] || 'application/octet-stream',
-        'Content-Length': fs.statSync(filePath).size,
+        'Content-Type': contentType,
+        'Content-Length': fileSize,
         'Cache-Control': 'no-cache',
+        'Accept-Ranges': 'bytes',
       });
       fs.createReadStream(filePath).pipe(res);
       return;

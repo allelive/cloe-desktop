@@ -92,10 +92,16 @@ def generate_cosyvoice(text, api_key, model, voice):
 
 
 def wav_to_mp3(wav_path, mp3_path):
-    """WAV 转 MP3（Electron new Audio() 播放 WAV 不完整，必须转）"""
+    """WAV 转 MP3（Electron new Audio() 播放 WAV 不完整，必须转）
+
+    必须使用 CBR + 标准采样率（44100Hz）：Chromium 对低采样率 VBR MP3
+    （如 MOSI 返回的 24000Hz WAV 转出的 MPEG 2.0 Layer III）缓冲不足，
+    会在 ~10s 处截断。CBR 128kbps + 44100Hz 可稳定播放任意时长。
+    """
     subprocess.run([
         "ffmpeg", "-y", "-i", wav_path,
-        "-c:a", "libmp3lame", "-q:a", "4", mp3_path,
+        "-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+        mp3_path,
     ], check=True, capture_output=True)
     return mp3_path
 
