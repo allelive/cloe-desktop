@@ -38,7 +38,7 @@
         {
           "target": "dmg",
           "arch": [
-            "x64"
+            "universal"
           ]
         }
       ],
