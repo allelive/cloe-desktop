@@ -254,8 +254,41 @@ html, body {
   border-radius: 3px;
 }
 
+/* ==================== Settings Button ==================== */
+#settings-btn {
+  position: fixed;
+  bottom: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.3s ease, background 0.2s ease;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  -webkit-app-region: no-drag;
+}
+#gif-container:hover ~ #settings-btn,
+#settings-btn:hover {
+  opacity: 1;
+}
+#settings-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.9);
+}
+
 /* When terminal is visible, disable dragging on gif-container */
 body.terminal-mode #gif-container {
   pointer-events: none;
   cursor: default;
+}
+body.terminal-mode #settings-btn {
+  display: none;
 }

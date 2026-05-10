@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setWindowMode: (mode) => ipcRenderer.send('set-window-mode', mode),
   toggleFullscreen: () => ipcRenderer.send('toggle-fullscreen'),
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
+  // Settings
+  openSettings: () => ipcRenderer.send('open-settings'),
   // Terminal shortcut
   setTerminalShortcut: (accelerator) => ipcRenderer.send('set-terminal-shortcut', accelerator),
   onTerminalToggle: (cb) => ipcRenderer.on('terminal-toggle-shortcut', () => cb()),

@@ -2022,6 +2022,10 @@ function createManagerWindow() {
   });
 }
 
+ipcMain.on('open-settings', () => {
+  createManagerWindow();
+});
+
 // ==================== System Tray ====================
 function createTray() {
   // Embedded 32x32 tray icon (base64, pink circle with "C") — no file I/O needed
@@ -2049,6 +2053,65 @@ function createTray() {
   tray.setContextMenu(contextMenu);
 }
 
+// ==================== Application Menu (macOS menu bar) ====================
+function createAppMenu() {
+  const template = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about', label: `关于 ${app.name}` },
+        { type: 'separator' },
+        { label: '设置...', accelerator: 'Cmd+,', click: () => createManagerWindow() },
+        { type: 'separator' },
+        { role: 'services', label: '服务' },
+        { type: 'separator' },
+        { role: 'hide', label: `隐藏 ${app.name}` },
+        { role: 'hideOthers', label: '隐藏其他' },
+        { role: 'unhide', label: '全部显示' },
+        { type: 'separator' },
+        { role: 'quit', label: `退出 ${app.name}` },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo', label: '撤销' },
+        { role: 'redo', label: '重做' },
+        { type: 'separator' },
+        { role: 'cut', label: '剪切' },
+        { role: 'copy', label: '复制' },
+        { role: 'paste', label: '粘贴' },
+        { role: 'selectAll', label: '全选' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload', label: '重新加载' },
+        { role: 'forceReload', label: '强制重新加载' },
+        { role: 'toggleDevTools', label: '开发者工具' },
+        { type: 'separator' },
+        { role: 'resetZoom', label: '实际大小' },
+        { role: 'zoomIn', label: '放大' },
+        { role: 'zoomOut', label: '缩小' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: '全屏' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize', label: '最小化' },
+        { role: 'zoom', label: '缩放' },
+        { type: 'separator' },
+        { role: 'front', label: '前置所有窗口' },
+      ],
+    },
+  ];
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
 // ==================== Bootstrap ====================
 app.whenReady().then(async () => {
   ensureCloeConfigDirAndMigrateConfig();
@@ -2061,6 +2124,7 @@ app.whenReady().then(async () => {
   await waitForBridge();
   createWindow();
   createTray();
+  createAppMenu();
 
   win.on('enter-full-screen', () => {
     if (!win || win.isDestroyed()) return;

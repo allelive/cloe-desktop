@@ -448,6 +448,11 @@ function initTerminalToggle() {
   document.getElementById('terminal-btn-fullscreen')?.addEventListener('click', () => {
     window.electronAPI?.toggleFullscreen?.();
   });
+
+  // Settings button
+  document.getElementById('settings-btn')?.addEventListener('click', () => {
+    window.electronAPI?.openSettings?.();
+  });
 }
 
 async function enableTerminal() {
