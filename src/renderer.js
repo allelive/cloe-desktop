@@ -436,6 +436,18 @@ function initTerminalToggle() {
       localStorage.setItem('cloe-terminal-visible', String(terminalMode));
     }
   }, true); // capture phase — intercept before xterm
+
+  // Traffic light buttons
+  document.getElementById('terminal-btn-close')?.addEventListener('click', () => {
+    disableTerminal();
+    localStorage.setItem('cloe-terminal-visible', 'false');
+  });
+  document.getElementById('terminal-btn-minimize')?.addEventListener('click', () => {
+    window.electronAPI?.minimizeWindow?.();
+  });
+  document.getElementById('terminal-btn-fullscreen')?.addEventListener('click', () => {
+    window.electronAPI?.toggleFullscreen?.();
+  });
 }
 
 async function enableTerminal() {
@@ -539,6 +551,11 @@ async function spawnTerminal() {
     }
   };
   window.addEventListener('resize', doResize);
+
+  // Re-fit xterm on fullscreen change (macOS green button)
+  window.electronAPI?.onFullscreenChanged?.(() => {
+    setTimeout(doResize, 100); // delay for animation to settle
+  });
 }
 
 // ==================== WebSocket ====================

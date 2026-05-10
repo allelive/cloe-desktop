@@ -18,8 +18,16 @@
     </div>
   </div>
 
-  <!-- Terminal layer (overlays character, below top-bar drag zone) -->
+  <!-- Terminal layer -->
   <div id="terminal-overlay" class="terminal-overlay hidden">
+    <div id="terminal-titlebar" class="terminal-titlebar">
+      <div class="terminal-traffic-lights">
+        <button id="terminal-btn-close" class="traffic-light traffic-close" title="Exit Terminal"></button>
+        <button id="terminal-btn-minimize" class="traffic-light traffic-minimize" title="Minimize"></button>
+        <button id="terminal-btn-fullscreen" class="traffic-light traffic-fullscreen" title="Fullscreen"></button>
+      </div>
+      <div class="terminal-drag-region"></div>
+    </div>
     <div id="terminal-container" class="terminal-container"></div>
   </div>
 

@@ -10,7 +10,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onPtyData: (cb) => ipcRenderer.on('pty-data', (_e, data) => cb(data)),
   // Window mode
   setWindowMode: (mode) => ipcRenderer.send('set-window-mode', mode),
+  toggleFullscreen: () => ipcRenderer.send('toggle-fullscreen'),
+  minimizeWindow: () => ipcRenderer.send('minimize-window'),
   // Terminal shortcut
   setTerminalShortcut: (accelerator) => ipcRenderer.send('set-terminal-shortcut', accelerator),
   onTerminalToggle: (cb) => ipcRenderer.on('terminal-toggle-shortcut', () => cb()),
+  onFullscreenChanged: (cb) => ipcRenderer.on('fullscreen-changed', (_e, isFull) => cb(isFull)),
 });

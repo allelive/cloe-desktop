@@ -1826,6 +1826,7 @@ function createWindow() {
     y: pos.y,
     transparent: true,
     frame: false,
+    fullscreenable: true,
     alwaysOnTop: true,
     resizable: true,
     skipTaskbar: true,
@@ -1834,7 +1835,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false, // required for file:// ES modules
+      webSecurity: false,
     },
   });
 
@@ -1936,7 +1937,7 @@ ipcMain.on('pty-resize', (_e, { cols, rows }) => {
 });
 
 // ==================== Window Mode ====================
-// 'character' = alwaysOnTop small float, 'terminal' = normal sized window
+// 'character' = alwaysOnTop small float, 'terminal' = native title bar window
 ipcMain.on('set-window-mode', (_e, mode) => {
   if (!win) return;
   if (mode === 'terminal') {
@@ -1952,6 +1953,20 @@ ipcMain.on('set-window-mode', (_e, mode) => {
     win.setAlwaysOnTop(true);
     win.setSize(Math.round(BASE_WIDTH * scale), Math.round(BASE_HEIGHT * scale), true);
   }
+});
+
+ipcMain.on('toggle-fullscreen', () => {
+  if (!win || win.isDestroyed()) return;
+  if (win.isFullScreen()) {
+    win.setFullScreen(false);
+  } else {
+    win.setFullScreen(true);
+  }
+});
+
+ipcMain.on('minimize-window', () => {
+  if (!win || win.isDestroyed()) return;
+  win.minimize();
 });
 
 // ==================== Terminal Shortcut ====================
@@ -2077,6 +2092,15 @@ app.whenReady().then(async () => {
   await waitForBridge();
   createWindow();
   createTray();
+
+  win.on('enter-full-screen', () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send('fullscreen-changed', true);
+  });
+  win.on('leave-full-screen', () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send('fullscreen-changed', false);
+  });
 });
 
 app.on('window-all-closed', () => {
