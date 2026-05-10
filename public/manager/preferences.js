@@ -84,6 +84,19 @@ function renderPreferences() {
             </div>
           </div>
         </div>
+        <div class="pref-item">
+          <div class="pref-info">
+            <div class="pref-label">${I18n.t('prefs.windowScale')}</div>
+            <div class="pref-desc">${I18n.t('prefs.windowScaleDesc')}</div>
+          </div>
+          <div class="pref-control">
+            <div style="display:flex;align-items:center;gap:10px;min-width:200px;">
+              <input type="range" id="pref-window-scale" min="0.3" max="2.0" step="0.05" value="1.0"
+                style="flex:1;accent-color:var(--accent);cursor:pointer;">
+              <span id="pref-window-scale-value" style="font-size:13px;font-weight:600;min-width:36px;text-align:right;color:var(--text);">1.0×</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -284,6 +297,39 @@ function renderPreferences() {
   });
 
   refreshWindowPositionUi();
+
+  // Window scale slider
+  const scaleSlider = document.getElementById('pref-window-scale');
+  const scaleValue = document.getElementById('pref-window-scale-value');
+  let scaleDebounceTimer;
+
+  async function loadWindowScale() {
+    try {
+      const res = await fetch(`${API_CONFIG_BASE}/window-scale`);
+      if (!res.ok) return;
+      const data = await res.json();
+      scaleSlider.value = data.scale;
+      scaleValue.textContent = data.scale.toFixed(2) + '×';
+    } catch (_) {}
+  }
+
+  scaleSlider.addEventListener('input', () => {
+    const val = parseFloat(scaleSlider.value);
+    scaleValue.textContent = val.toFixed(2) + '×';
+    // Debounce API calls while dragging
+    clearTimeout(scaleDebounceTimer);
+    scaleDebounceTimer = setTimeout(async () => {
+      try {
+        await fetch(`${API_CONFIG_BASE}/window-scale`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scale: val }),
+        });
+      } catch (_) {}
+    }, 100);
+  });
+
+  loadWindowScale();
 }
 
 function updatePreferencesText() {

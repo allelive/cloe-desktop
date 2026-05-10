@@ -196,7 +196,9 @@
     "about": "About",
     "aboutDesc": "Desktop pet companion · Make your desktop more fun",
     "contextBar": "Context Usage Bar",
-    "contextBarDesc": "Show AI context window usage percentage above the character, like a game health bar"
+    "contextBarDesc": "Show AI context window usage percentage above the character, like a game health bar",
+    "windowScale": "Character Size",
+    "windowScaleDesc": "Freely adjust the desktop character size (0.3× ~ 2.0×)"
   },
   "pluginRules": {
     "throttle": "Throttle",

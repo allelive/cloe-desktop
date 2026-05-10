@@ -1050,6 +1050,37 @@ function createBridgeServers() {
       return;
     }
 
+    // GET /window-scale — get current window scale
+    if (req.method === 'GET' && urlPath === '/window-scale') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ scale: getWindowScale(), min: MIN_SCALE, max: MAX_SCALE }));
+      return;
+    }
+
+    // POST /window-scale — set window scale (0.3 ~ 2.0)
+    if (req.method === 'POST' && urlPath === '/window-scale') {
+      let body = '';
+      req.on('data', (chunk) => (body += chunk));
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body || '{}');
+          const s = parseFloat(payload.scale);
+          if (isNaN(s) || !Number.isFinite(s)) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'expected { scale: number }' }));
+            return;
+          }
+          const actual = setWindowScale(s);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, scale: actual }));
+        } catch (_) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'invalid JSON' }));
+        }
+      });
+      return;
+    }
+
     if (req.method === 'POST' && urlPath === '/window-position') {
       let body = '';
       req.on('data', (chunk) => (body += chunk));
@@ -1755,9 +1786,38 @@ function getInitialMainWindowXY(windowWidth, windowHeight) {
 }
 
 // ==================== Window ====================
+const BASE_WIDTH = 380;
+const BASE_HEIGHT = 520;
+const MIN_SCALE = 0.3;
+const MAX_SCALE = 2.0;
+const DEFAULT_SCALE = 1.0;
+
+function getWindowScale() {
+  const cfg = loadConfig();
+  const s = cfg.windowScale;
+  if (typeof s === 'number' && s >= MIN_SCALE && s <= MAX_SCALE) return s;
+  return DEFAULT_SCALE;
+}
+
+function setWindowScale(scale) {
+  const s = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+  const cfg = loadConfig();
+  cfg.windowScale = s;
+  saveConfig(cfg);
+  // Resize the actual window
+  if (win && !win.isDestroyed()) {
+    const ww = Math.round(BASE_WIDTH * s);
+    const wh = Math.round(BASE_HEIGHT * s);
+    win.setSize(ww, wh, true);
+    console.log(`[Window] Resized to ${ww}×${wh} (scale ${s.toFixed(2)})`);
+  }
+  return s;
+}
+
 function createWindow() {
-  const ww = 380;
-  const wh = 520;
+  const scale = getWindowScale();
+  const ww = Math.round(BASE_WIDTH * scale);
+  const wh = Math.round(BASE_HEIGHT * scale);
   const pos = getInitialMainWindowXY(ww, wh);
 
   win = new BrowserWindow({
