@@ -1854,86 +1854,55 @@ ipcMain.on('window-move', (_e, { dx, dy }) => {
   }
 });
 
-// ==================== PTY Proxy (via system Node.js subprocess) ====================
-let ptyProxy = null;
+// ==================== PTY (direct in Electron main process) ====================
+let ptyProc = null;
 let ptyReady = false;
-let ptyInputBuf = '';
 
-function startPtyProxy() {
-  if (ptyProxy) return;
-  const proxyScript = app.isPackaged
-    ? path.join(process.resourcesPath, 'scripts', 'pty-proxy.js')
-    : path.join(__dirname, 'scripts', 'pty-proxy.js');
-  // Use system node (not Electron) to avoid ABI mismatch
-  const nodeBin = process.env.CLOE_NODE_PATH || '/opt/homebrew/bin/node';
-  ptyProxy = spawn(nodeBin, [proxyScript], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env },
-  });
-
-  ptyInputBuf = '';
-  ptyProxy.stdout.on('data', (chunk) => {
-    ptyInputBuf += chunk.toString();
-    let idx;
-    while ((idx = ptyInputBuf.indexOf('\n')) !== -1) {
-      const line = ptyInputBuf.slice(0, idx).trim();
-      ptyInputBuf = ptyInputBuf.slice(idx + 1);
-      if (!line) continue;
-      try {
-        const msg = JSON.parse(line);
-        if (msg.type === 'data' && win && !win.isDestroyed()) {
-          win.webContents.send('pty-data', msg.data);
-        } else if (msg.type === 'ready') {
-          ptyReady = true;
-          console.log('[PTY] Proxy ready');
-        } else if (msg.type === 'exit') {
-          console.log(`[PTY] Shell exited with code ${msg.exitCode}`);
-          ptyReady = false;
-        }
-      } catch (e) { /* ignore */ }
-    }
-  });
-
-  ptyProxy.stderr.on('data', (data) => {
-    console.error('[PTY-Proxy stderr]', data.toString());
-  });
-
-  ptyProxy.on('exit', (code) => {
-    console.log(`[PTY] Proxy exited (${code})`);
-    ptyProxy = null;
-    ptyReady = false;
-  });
-}
-
-function sendToProxy(msg) {
-  if (!ptyProxy || ptyProxy.killed) {
-    startPtyProxy();
-  }
-  // Wait for proxy to be ready
-  const send = () => {
-    if (ptyProxy && !ptyProxy.killed) {
-      ptyProxy.stdin.write(JSON.stringify(msg) + '\n');
-    }
-  };
-  if (ptyReady) {
-    send();
-  } else {
-    // Retry after short delay if not ready yet
-    setTimeout(send, 200);
+function spawnPty(cols, rows) {
+  if (ptyProc || ptyReady) return;
+  try {
+    const pty = require('node-pty');
+    const shell = '/bin/zsh';
+    ptyProc = pty.spawn(shell, [], {
+      name: 'xterm-256color',
+      cols: cols || 80,
+      rows: rows || 24,
+      cwd: process.env.HOME || '/Users/lijian',
+      env: {
+        ...process.env,
+        HOME: process.env.HOME || '/Users/lijian',
+        SHELL: shell,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+      },
+    });
+    ptyProc.onData((data) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('pty-data', data);
+      }
+    });
+    ptyProc.onExit(({ exitCode }) => {
+      console.log(`[PTY] Shell exited with code ${exitCode}`);
+      ptyProc = null;
+      ptyReady = false;
+    });
+    ptyReady = true;
+    console.log('[PTY] Shell ready');
+  } catch (e) {
+    console.error('[PTY] Failed to spawn:', e.message);
   }
 }
 
 ipcMain.on('pty-spawn', (_e, { cols, rows }) => {
-  if (ptyReady) return;
-  sendToProxy({ cmd: 'spawn', cols, rows });
+  spawnPty(cols, rows);
 });
 
 ipcMain.on('pty-write', (_e, data) => {
-  sendToProxy({ cmd: 'write', data });
+  if (ptyProc) ptyProc.write(data || '');
 });
 
 ipcMain.on('pty-resize', (_e, { cols, rows }) => {
-  sendToProxy({ cmd: 'resize', cols, rows });
+  if (ptyProc) ptyProc.resize(cols || 80, rows || 24);
 });
 
 // ==================== Window Mode ====================

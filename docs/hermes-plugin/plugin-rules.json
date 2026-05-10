@@ -1,0 +1,26 @@
+{
+  "min_interval": 1.5,
+  "tool_expressions": {
+    "terminal": null,
+    "execute_code": null,
+    "write_file": null,
+    "patch": null,
+    "read_file": null,
+    "search_files": null,
+    "web_search": null,
+    "browser_navigate": null,
+    "browser_click": null,
+    "delegate_task": null,
+    "send_message": null,
+    "vision_analyze": null
+  },
+  "tool_completions": {
+    "execute_code": null,
+    "delegate_task": null
+  },
+  "keyword_map": [],
+  "context_thresholds": {
+    "warning": { "pct": 75, "action": null },
+    "critical": { "pct": 90, "action": null }
+  }
+}

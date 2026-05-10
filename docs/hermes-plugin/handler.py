@@ -46,18 +46,8 @@ _MODEL_CONTEXT_LIMITS = {
 _DEFAULT_RULES = {
     "min_interval": _DEFAULT_MIN_INTERVAL,
     "tool_expressions": {
-        "terminal": "working",
-        "execute_code": "working",
-        "write_file": "working",
-        "patch": "working",
-        "read_file": None,
-        "search_files": None,
-        "web_search": "working",
-        "browser_navigate": "working",
-        "browser_click": "working",
-        "delegate_task": "working",
-        "send_message": "working",
-        "vision_analyze": "working",
+        # NOTE: working is triggered by on_pre_llm_call, not per-tool.
+        # Only keep tool-specific expressions that differ from "working".
     },
     "tool_completions": {
         "delegate_task": "clap",
@@ -318,9 +308,13 @@ class CloeDesktopBridge:
     def on_pre_llm_call(self, session_id: str, user_message: str,
                         conversation_history: list, is_first_turn: bool,
                         model: str, platform: str) -> None:
-        """Before the LLM loop — react to user message content."""
+        """Before the LLM loop — enter working mode + react to user message."""
         self._turn_tool_count = 0
         self._turn_start_time = time.monotonic()
+
+        # Trigger working mode at turn start (replaces gateway hook agent:start).
+        # This works in both gateway and TUI modes.
+        self._trigger_action("working", force=True)
 
         if not user_message:
             return
