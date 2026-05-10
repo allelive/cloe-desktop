@@ -18,7 +18,6 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { WebSocketServer } = require('ws');
-
 // ==================== Config ====================
 const WS_PORT = 19850;
 const HTTP_PORT = 19851;
@@ -1852,6 +1851,119 @@ ipcMain.on('window-move', (_e, { dx, dy }) => {
     const [x, y] = win.getPosition();
     win.setPosition(x + dx, y + dy);
   }
+});
+
+// ==================== PTY Proxy (via system Node.js subprocess) ====================
+let ptyProxy = null;
+let ptyReady = false;
+let ptyInputBuf = '';
+
+function startPtyProxy() {
+  if (ptyProxy) return;
+  const proxyScript = app.isPackaged
+    ? path.join(process.resourcesPath, 'scripts', 'pty-proxy.js')
+    : path.join(__dirname, 'scripts', 'pty-proxy.js');
+  // Use system node (not Electron) to avoid ABI mismatch
+  const nodeBin = process.env.CLOE_NODE_PATH || '/opt/homebrew/bin/node';
+  ptyProxy = spawn(nodeBin, [proxyScript], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env },
+  });
+
+  ptyInputBuf = '';
+  ptyProxy.stdout.on('data', (chunk) => {
+    ptyInputBuf += chunk.toString();
+    let idx;
+    while ((idx = ptyInputBuf.indexOf('\n')) !== -1) {
+      const line = ptyInputBuf.slice(0, idx).trim();
+      ptyInputBuf = ptyInputBuf.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.type === 'data' && win && !win.isDestroyed()) {
+          win.webContents.send('pty-data', msg.data);
+        } else if (msg.type === 'ready') {
+          ptyReady = true;
+          console.log('[PTY] Proxy ready');
+        } else if (msg.type === 'exit') {
+          console.log(`[PTY] Shell exited with code ${msg.exitCode}`);
+          ptyReady = false;
+        }
+      } catch (e) { /* ignore */ }
+    }
+  });
+
+  ptyProxy.stderr.on('data', (data) => {
+    console.error('[PTY-Proxy stderr]', data.toString());
+  });
+
+  ptyProxy.on('exit', (code) => {
+    console.log(`[PTY] Proxy exited (${code})`);
+    ptyProxy = null;
+    ptyReady = false;
+  });
+}
+
+function sendToProxy(msg) {
+  if (!ptyProxy || ptyProxy.killed) {
+    startPtyProxy();
+  }
+  // Wait for proxy to be ready
+  const send = () => {
+    if (ptyProxy && !ptyProxy.killed) {
+      ptyProxy.stdin.write(JSON.stringify(msg) + '\n');
+    }
+  };
+  if (ptyReady) {
+    send();
+  } else {
+    // Retry after short delay if not ready yet
+    setTimeout(send, 200);
+  }
+}
+
+ipcMain.on('pty-spawn', (_e, { cols, rows }) => {
+  if (ptyReady) return;
+  sendToProxy({ cmd: 'spawn', cols, rows });
+});
+
+ipcMain.on('pty-write', (_e, data) => {
+  sendToProxy({ cmd: 'write', data });
+});
+
+ipcMain.on('pty-resize', (_e, { cols, rows }) => {
+  sendToProxy({ cmd: 'resize', cols, rows });
+});
+
+// ==================== Window Mode ====================
+// 'character' = alwaysOnTop small float, 'terminal' = normal sized window
+ipcMain.on('set-window-mode', (_e, mode) => {
+  if (!win) return;
+  if (mode === 'terminal') {
+    const display = screen.getPrimaryDisplay();
+    const { width: dw, height: dh } = display.workAreaSize;
+    const tw = Math.min(1200, Math.round(dw * 0.75));
+    const th = Math.min(800, Math.round(dh * 0.75));
+    win.setAlwaysOnTop(false);
+    win.setSize(tw, th, true);
+    win.center();
+  } else {
+    const scale = getWindowScale();
+    win.setAlwaysOnTop(true);
+    win.setSize(Math.round(BASE_WIDTH * scale), Math.round(BASE_HEIGHT * scale), true);
+  }
+});
+
+// ==================== Terminal Shortcut ====================
+let currentShortcut = null;
+
+// Terminal shortcut is handled entirely in renderer.js (document-level keydown).
+// IPC kept for config persistence only.
+ipcMain.on('set-terminal-shortcut', (_e, accelerator) => {
+  // Persist to config so it survives restarts
+  const cfg = loadConfig();
+  cfg.terminalShortcut = accelerator || '';
+  saveConfig(cfg);
 });
 
 ipcMain.on('get-data-dir', (event) => {

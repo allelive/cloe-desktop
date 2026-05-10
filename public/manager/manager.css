@@ -708,3 +708,14 @@ html, body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* ==================== Shortcut Recording ==================== */
+.shortcut-recording {
+  border-color: var(--accent) !important;
+  animation: shortcut-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes shortcut-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(100, 181, 246, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(100, 181, 246, 0.3); }
+}

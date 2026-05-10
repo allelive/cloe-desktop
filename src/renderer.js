@@ -361,8 +361,10 @@ const container = document.getElementById('gif-container');
 let isDragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
+let terminalMode = false; // flag: when true, dragging is disabled
 
 container.addEventListener('mousedown', (e) => {
+  if (terminalMode) return; // no dragging in terminal mode
   isDragging = true;
   dragStartX = e.screenX;
   dragStartY = e.screenY;
@@ -376,6 +378,168 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', () => { isDragging = false; });
+
+// ==================== Terminal Mode ====================
+const terminalOverlay = document.getElementById('terminal-overlay');
+const terminalContainer = document.getElementById('terminal-container');
+
+let xtermInstance = null;
+let ptyActive = false;
+
+function initTerminalToggle() {
+  // Read initial state
+  const enabled = localStorage.getItem('cloe-terminal-visible') === 'true';
+  if (enabled) enableTerminal();
+
+  // Listen for changes from settings panel (cross-window localStorage event)
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'cloe-terminal-visible') {
+      if (e.newValue === 'true') enableTerminal();
+      else disableTerminal();
+    }
+    if (e.key === 'cloe-terminal-shortcut') {
+      // Persist shortcut via IPC to main process config
+      window.electronAPI?.setTerminalShortcut?.(e.newValue || '');
+    }
+  });
+
+  // Same-window shortcut changes (settings panel in same origin)
+  setInterval(() => {
+    const accel = localStorage.getItem('cloe-terminal-shortcut') || '';
+    if (accel !== initTerminalToggle._lastShortcut) {
+      initTerminalToggle._lastShortcut = accel;
+      window.electronAPI?.setTerminalShortcut?.(accel);
+    }
+  }, 2000);
+
+  // In-app shortcut: document-level keydown in capture phase (before xterm)
+  document.addEventListener('keydown', (e) => {
+    const stored = localStorage.getItem('cloe-terminal-shortcut') || '';
+    if (!stored) return;
+    // Normalize: handle both "Cmd+Control+T" and legacy "CommandOrControl+T"
+    const parts = stored.toLowerCase().split('+');
+    const key = parts[parts.length - 1];
+    const wantCmd = parts.includes('cmd') || parts.includes('commandorcontrol') || parts.includes('command');
+    const wantCtrl = parts.includes('control') || parts.includes('ctrl');
+    const wantAlt = parts.includes('alt');
+    const wantShift = parts.includes('shift');
+    if (e.metaKey === wantCmd && e.ctrlKey === wantCtrl &&
+        e.altKey === wantAlt && e.shiftKey === wantShift &&
+        e.key.toUpperCase() === key.toUpperCase()) {
+      // In terminal mode: always intercept (user wants to exit)
+      // In normal mode: skip if xterm has focus (terminal needs all keys)
+      if (!terminalMode && document.activeElement?.classList?.contains('xterm-helper-textarea')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (terminalMode) disableTerminal();
+      else enableTerminal();
+      localStorage.setItem('cloe-terminal-visible', String(terminalMode));
+    }
+  }, true); // capture phase — intercept before xterm
+}
+
+async function enableTerminal() {
+  terminalMode = true;
+  document.body.classList.add('terminal-mode');
+  terminalOverlay.classList.remove('hidden');
+  window.electronAPI?.setWindowMode?.('terminal');
+
+  if (!ptyActive) {
+    await spawnTerminal();
+  }
+
+  // Wait for layout, then focus
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (xtermInstance) {
+        fitAddonInstance?.fit();
+        xtermInstance.focus();
+      }
+    });
+  });
+}
+
+function disableTerminal() {
+  terminalMode = false;
+  document.body.classList.remove('terminal-mode');
+  terminalOverlay.classList.add('hidden');
+  window.electronAPI?.setWindowMode?.('character');
+  // Keep PTY alive
+}
+
+let fitAddonInstance = null;
+
+async function spawnTerminal() {
+  const { Terminal } = await import('xterm');
+  const { FitAddon } = await import('@xterm/addon-fit');
+  await import('xterm/css/xterm.css');
+
+  xtermInstance = new Terminal({
+    cursorBlink: true,
+    cursorStyle: 'bar',
+    fontSize: 14,
+    lineHeight: 1.3,
+    fontFamily: "'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace",
+    theme: {
+      background: 'transparent',
+      foreground: '#e0e0e0',
+      cursor: '#80cbc4',
+      cursorAccent: 'transparent',
+      selectionBackground: 'rgba(100, 181, 246, 0.3)',
+      selectionForeground: '#ffffff',
+      black: '#1a1a2e',
+      red: '#ef5350',
+      green: '#66bb6a',
+      yellow: '#ffca28',
+      blue: '#42a5f5',
+      magenta: '#ab47bc',
+      cyan: '#26c6da',
+      white: '#e0e0e0',
+      brightBlack: '#666666',
+      brightRed: '#ef9a9a',
+      brightGreen: '#a5d6a7',
+      brightYellow: '#ffe082',
+      brightBlue: '#90caf9',
+      brightMagenta: '#ce93d8',
+      brightCyan: '#80deea',
+      brightWhite: '#ffffff',
+    },
+    allowTransparency: true,
+    scrollback: 5000,
+    macOptionIsMeta: true,
+  });
+
+  fitAddonInstance = new FitAddon();
+  xtermInstance.loadAddon(fitAddonInstance);
+  xtermInstance.open(terminalContainer);
+
+  // Spawn PTY after DOM renders
+  setTimeout(() => {
+    fitAddonInstance.fit();
+    window.electronAPI.ptySpawn(xtermInstance.cols, xtermInstance.rows);
+    ptyActive = true;
+    xtermInstance.focus();
+  }, 150);
+
+  // PTY output → xterm
+  window.electronAPI.onPtyData((data) => {
+    if (xtermInstance) xtermInstance.write(data);
+  });
+
+  // xterm input → PTY
+  xtermInstance.onData((data) => {
+    window.electronAPI.ptyWrite(data);
+  });
+
+  // Resize on window resize
+  const doResize = () => {
+    try { fitAddonInstance?.fit(); } catch (e) { /* ignore */ }
+    if (xtermInstance) {
+      window.electronAPI.ptyResize(xtermInstance.cols, xtermInstance.rows);
+    }
+  };
+  window.addEventListener('resize', doResize);
+}
 
 // ==================== WebSocket ====================
 let ws = null;
@@ -448,4 +612,5 @@ function connectWebSocket() {
 
 // ==================== Init ====================
 startIdleLoop();
+initTerminalToggle();
 connectWebSocket();

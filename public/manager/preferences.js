@@ -97,6 +97,33 @@ function renderPreferences() {
             </div>
           </div>
         </div>
+        <div class="pref-item">
+          <div class="pref-info">
+            <div class="pref-label">${I18n.t('prefs.terminal')}</div>
+            <div class="pref-desc">${I18n.t('prefs.terminalDesc')}</div>
+          </div>
+          <div class="pref-control">
+            <label class="toggle">
+              <input type="checkbox" id="pref-terminal-enabled">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="pref-item">
+          <div class="pref-info">
+            <div class="pref-label">${I18n.t('prefs.terminalShortcut')}</div>
+            <div class="pref-desc">${I18n.t('prefs.terminalShortcutDesc')}</div>
+          </div>
+          <div class="pref-control">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <input type="text" id="pref-terminal-shortcut" class="form-input"
+                style="width:160px;text-align:center;font-family:'SF Mono',monospace;font-size:13px;cursor:pointer;"
+                placeholder="${I18n.t('prefs.terminalShortcutEmpty')}"
+                readonly>
+              <button type="button" class="btn btn-secondary btn-sm" id="pref-terminal-shortcut-clear">${I18n.t('prefs.terminalShortcutClear')}</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -330,6 +357,88 @@ function renderPreferences() {
   });
 
   loadWindowScale();
+
+  // Terminal toggle
+  const terminalToggle = document.getElementById('pref-terminal-enabled');
+  const savedTerminal = localStorage.getItem('cloe-terminal-visible') === 'true';
+  terminalToggle.checked = savedTerminal;
+  terminalToggle.addEventListener('change', () => {
+    localStorage.setItem('cloe-terminal-visible', terminalToggle.checked);
+  });
+
+  // Terminal shortcut recorder
+  const shortcutInput = document.getElementById('pref-terminal-shortcut');
+  const shortcutClearBtn = document.getElementById('pref-terminal-shortcut-clear');
+  let savedShortcut = localStorage.getItem('cloe-terminal-shortcut') || '';
+  if (savedShortcut) shortcutInput.value = electronAcceleratorToDisplay(savedShortcut);
+
+  shortcutInput.addEventListener('focus', () => {
+    shortcutInput.value = I18n.t('prefs.terminalShortcutHint');
+    shortcutInput.classList.add('shortcut-recording');
+  });
+
+  shortcutInput.addEventListener('blur', () => {
+    shortcutInput.classList.remove('shortcut-recording');
+    shortcutInput.value = savedShortcut ? electronAcceleratorToDisplay(savedShortcut) : '';
+  });
+
+  shortcutInput.addEventListener('keydown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const accel = buildElectronAccelerator(e);
+    if (!accel) return;
+    savedShortcut = accel;
+    localStorage.setItem('cloe-terminal-shortcut', accel);
+    shortcutInput.value = electronAcceleratorToDisplay(accel);
+    shortcutInput.blur();
+  });
+
+  shortcutClearBtn.addEventListener('click', () => {
+    savedShortcut = '';
+    localStorage.removeItem('cloe-terminal-shortcut');
+    shortcutInput.value = '';
+  });
+
+  // Notify main process of current shortcut on load
+  if (savedShortcut) {
+    window.electronAPI?.setTerminalShortcut?.(savedShortcut);
+  }
+}
+
+/**
+ * Build an Electron accelerator string from a KeyboardEvent.
+ * Preserve all modifiers separately — don't collapse Ctrl+Cmd.
+ */
+function buildElectronAccelerator(e) {
+  const parts = [];
+  if (e.metaKey) parts.push('Cmd');
+  if (e.ctrlKey) parts.push('Control');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  // Only register single letter keys or function keys
+  if (/^F\d{1,2}$/.test(e.key)) {
+    parts.push(e.key);
+  } else if (e.key.length === 1) {
+    parts.push(e.key.toUpperCase());
+  } else {
+    return null; // ignore modifier-only, arrows, etc.
+  }
+  return parts.join('+');
+}
+
+/**
+ * Convert "Cmd+Control+T" → "⌘⌃T" for display.
+ */
+function electronAcceleratorToDisplay(accel) {
+  return accel
+    .replace(/CommandOrControl/g, '⌘')
+    .replace(/Command/g, '⌘')
+    .replace(/Cmd/g, '⌘')
+    .replace(/Control/g, '⌃')
+    .replace(/Ctrl/g, '⌃')
+    .replace(/Alt/g, '⌥')
+    .replace(/Shift/g, '⇧')
+    .replace(/\+/g, '');
 }
 
 function updatePreferencesText() {

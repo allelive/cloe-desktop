@@ -122,3 +122,61 @@ html, body {
   white-space: nowrap;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
 }
+
+/* ==================== Terminal Overlay ==================== */
+.terminal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5; /* above gif-container (z-index auto), below ws-status (10) */
+  background: rgba(10, 10, 20, 0.72); /* semi-transparent dark — visible but see-through */
+}
+
+.terminal-overlay.hidden {
+  display: none;
+}
+
+.terminal-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px;
+}
+
+/* xterm transparent background */
+.terminal-container .xterm {
+  background: transparent !important;
+  height: 100%;
+}
+
+.terminal-container .xterm-viewport {
+  background: transparent !important;
+}
+
+.terminal-container .xterm-screen {
+  background: transparent !important;
+}
+
+/* Scrollbar styling */
+.terminal-container .xterm-viewport::-webkit-scrollbar {
+  width: 6px;
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-container .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+/* When terminal is visible, disable dragging on gif-container */
+body.terminal-mode #gif-container {
+  pointer-events: none;
+  cursor: default;
+}

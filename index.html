@@ -7,15 +7,22 @@
   <link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
+  <!-- Character layer (bottom) -->
   <div id="gif-container">
     <img id="cloe-gif-a" class="cloe-gif-layer" src="/gifs/blink.gif" alt="">
     <img id="cloe-gif-b" class="cloe-gif-layer" src="" alt="">
-    <!-- Context usage HUD bar (game-style health bar above character) -->
+    <!-- Context usage HUD bar -->
     <div id="context-bar" class="context-bar">
       <div id="context-bar-fill" class="context-bar-fill"></div>
       <span id="context-bar-text" class="context-bar-text">0%</span>
     </div>
   </div>
+
+  <!-- Terminal layer (overlays character, below top-bar drag zone) -->
+  <div id="terminal-overlay" class="terminal-overlay hidden">
+    <div id="terminal-container" class="terminal-container"></div>
+  </div>
+
   <div id="ws-status" title="WebSocket">●</div>
   <script type="module" src="/src/renderer.js"></script>
 </body>
