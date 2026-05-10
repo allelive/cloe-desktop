@@ -155,13 +155,13 @@ function resetGif() {
 // ==================== Idle Loop ====================
 function scheduleNextIdle() {
   clearTimeout(idleTimer);
-  if (isReacting || isWorking) return;
+  if (isReacting || isWorking || isWalking) return;
   const delay = IDLE_INTERVAL.min + Math.random() * (IDLE_INTERVAL.max - IDLE_INTERVAL.min);
   idleTimer = setTimeout(playRandomIdle, delay);
 }
 
 function playRandomIdle() {
-  if (isReacting || isWorking) return;
+  if (isReacting || isWorking || isWalking) return;
   const choices = IDLE_PLAYLIST.filter((n) => n !== currentGif);
   const pool = choices.length > 0 ? choices : IDLE_PLAYLIST;
   const next = pool[Math.floor(Math.random() * pool.length)];
@@ -169,6 +169,7 @@ function playRandomIdle() {
 }
 
 function startIdleLoop() {
+  if (isWalking) return;
   const first = IDLE_PLAYLIST[Math.floor(Math.random() * IDLE_PLAYLIST.length)];
   switchGif(first, false);
 }
@@ -219,6 +220,12 @@ function handleAction(data) {
   // The only exception is another 'speak' (re-trigger / override).
   if (isSpeaking && action !== 'speak') {
     console.log('[Action] Dropped — speak in progress:', action);
+    return;
+  }
+
+  // ── Walking takes priority: ignore all actions except idle/stop ──
+  if (isWalking && action !== 'walk_right' && action !== 'walk_left' && action !== 'idle') {
+    console.log('[Action] Dropped — walk in progress:', action);
     return;
   }
 
@@ -274,9 +281,19 @@ function handleAction(data) {
     return;
   }
 
+  // ── Walk action: switch GIF + move window across screen (must check before ACTION_MAP) ──
+  if (action === 'walk_right' || action === 'walk_left') {
+    const walkGif = GIF_ANIMATIONS[action];
+    if (walkGif) switchGif(action, false);
+    const direction = action === 'walk_right' ? 1 : -1;
+    startWalk(direction * 2);
+    return;
+  }
+
   // Direct mapping or fallback
   let gifName = ACTION_MAP[action];
   let animSrc = GIF_ANIMATIONS;
+
   if (!gifName && FALLBACK_ACTION_MAP[action]) {
     // Fallback to default set
     gifName = FALLBACK_ACTION_MAP[action];
@@ -444,6 +461,92 @@ function connectWebSocket() {
     wsStatus.style.color = '#f44336';
     reconnectTimer = setTimeout(connectWebSocket, 5000);
   }
+}
+
+// ==================== Walk Mode ====================
+// Move the Cloe window across the screen, bounce at edges, return to origin
+let isWalking = false;
+let walkRafId = null;
+
+function startWalk(speed = 1.5) {
+  if (isWalking) return;
+  isWalking = true;
+  clearTimeout(idleTimer);
+  clearTimeout(reactionTimer);
+  isReacting = true;
+
+  const api = window.electronAPI;
+  if (!api?.getWorkAreaSize || !api?.getWindowPosition) {
+    console.error('[Walk] Missing electronAPI');
+    isWalking = false;
+    isReacting = false;
+    startIdleLoop();
+    return;
+  }
+
+  // Record starting position to return to after round-trip
+  api.getWindowPosition().then((startPos) => {
+    if (!startPos) { isWalking = false; return; }
+    const originX = startPos.x;
+
+    api.getWorkAreaSize().then((screen) => {
+      if (!screen) { isWalking = false; return; }
+      const screenWidth = screen.width;
+      const MARGIN = 40;
+      let direction = speed > 0 ? 1 : -1;
+      let currentSpeed = Math.abs(speed);
+
+      function switchWalkGif(dir) {
+        const gifName = dir > 0 ? 'walk_right' : 'walk_left';
+        if (GIF_ANIMATIONS[gifName]) switchGif(gifName, false);
+      }
+
+      // Set initial walk GIF
+      switchWalkGif(direction);
+
+      let bounced = false;
+
+      function tick() {
+        if (!isWalking) return;
+
+        api.getWindowPosition().then((pos) => {
+          if (!pos || !isWalking) return;
+
+          // Only bounce once at the edge, then walk straight back to origin
+          if (!bounced && pos.x + 380 + MARGIN >= screenWidth && direction > 0) {
+            direction = -1;
+            bounced = true;
+            switchWalkGif(direction);
+          } else if (!bounced && pos.x - MARGIN <= 0 && direction < 0) {
+            direction = 1;
+            bounced = true;
+            switchWalkGif(direction);
+          }
+
+          api.moveWindow(Math.round(currentSpeed * direction), 0);
+
+          // Check if we've returned to origin after bouncing
+          if (bounced && Math.abs(pos.x - originX) < currentSpeed + 2) {
+            stopWalk();
+            return;
+          }
+
+          walkRafId = requestAnimationFrame(tick);
+        });
+      }
+      walkRafId = requestAnimationFrame(tick);
+    });
+  });
+}
+
+function stopWalk() {
+  isWalking = false;
+  if (walkRafId) {
+    cancelAnimationFrame(walkRafId);
+    walkRafId = null;
+  }
+  isReacting = false;
+  startIdleLoop();
 }
 
 // ==================== Init ====================

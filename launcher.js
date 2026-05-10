@@ -1876,6 +1876,11 @@ ipcMain.handle('get-window-position', () => {
   return { x, y };
 });
 
+ipcMain.handle('get-work-area-size', () => {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  return { width, height };
+});
+
 ipcMain.handle('save-window-position', (_event, payload) => {
   const x = payload?.x;
   const y = payload?.y;
