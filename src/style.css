@@ -254,6 +254,17 @@ html, body {
   border-radius: 3px;
 }
 
+/* ==================== Terminal Effect Overlay ==================== */
+.effect-canvas {
+  position: absolute;
+  top: 32px; /* below titlebar */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 2; /* above xterm (z-index auto), below titlebar (z-index 1) */
+}
+
 /* ==================== Settings Button ==================== */
 #settings-btn {
   position: fixed;

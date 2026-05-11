@@ -217,6 +217,12 @@ function handleAction(data) {
   // ── Highest priority: speaking (TTS audio playing) ──
   // Nothing can interrupt a speak in progress — drop all other actions.
   // The only exception is another 'speak' (re-trigger / override).
+  // Terminal effects always fire regardless of speak state
+  if (action === 'smash_screen') {
+    effectSmashScreen();
+    return;
+  }
+
   if (isSpeaking && action !== 'speak') {
     console.log('[Action] Dropped — speak in progress:', action);
     return;
@@ -526,6 +532,9 @@ async function spawnTerminal() {
     macOptionIsMeta: true,
   });
 
+  // Expose to window for DevTools access (module scope is invisible to console)
+  window.xtermInstance = xtermInstance;
+
   fitAddonInstance = new FitAddon();
   xtermInstance.loadAddon(fitAddonInstance);
   xtermInstance.open(terminalContainer);
@@ -561,6 +570,230 @@ async function spawnTerminal() {
   window.electronAPI?.onFullscreenChanged?.(() => {
     setTimeout(doResize, 100); // delay for animation to settle
   });
+}
+
+// ==================== Terminal Effect Engine ====================
+
+const effectCanvas = document.getElementById('effect-canvas');
+const effectCtx = effectCanvas ? effectCanvas.getContext('2d') : null;
+let effectRunning = false;
+let effectAnimId = null;
+
+let cellWidth = 8;
+let cellHeight = 18;
+const effectFontFamily = "'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace";
+const effectFontSize = 14;
+
+function measureCellMetrics() {
+  const rowEl = document.querySelector('.xterm-rows > div');
+  if (rowEl) {
+    const firstSpan = rowEl.querySelector('span');
+    if (firstSpan) cellWidth = firstSpan.offsetWidth || 8;
+    cellHeight = rowEl.offsetHeight || 18;
+  }
+}
+
+function sizeEffectCanvas() {
+  if (!effectCanvas) return;
+  const container = document.getElementById('terminal-container');
+  if (!container) return;
+  effectCanvas.width = container.clientWidth;
+  effectCanvas.height = container.clientHeight;
+}
+
+function readTerminalCells() {
+  if (!window.xtermInstance) return [];
+  sizeEffectCanvas();
+  measureCellMetrics();
+
+  const buffer = window.xtermInstance.buffer.active;
+  const startRow = buffer.viewportY;
+  const endRow = startRow + window.xtermInstance.rows;
+
+  // Read actual rendered colors from DOM instead of buffer API
+  const rowEls = document.querySelectorAll('.xterm-rows > div');
+  const screenEl = document.querySelector('.xterm-screen');
+  const screenRect = screenEl ? screenEl.getBoundingClientRect() : null;
+
+  const lineChunks = [];
+
+  for (let row = startRow; row < Math.min(endRow, buffer.length); row++) {
+    const line = buffer.getLine(row);
+    if (!line) continue;
+    const displayRow = row - startRow;
+    const rowEl = rowEls[displayRow];
+    if (!rowEl) continue;
+
+    // Build column → color map from DOM spans
+    const colColors = new Array(window.xtermInstance.cols).fill(null);
+    if (screenRect) {
+      for (const span of rowEl.children) {
+        const color = window.getComputedStyle(span).color;
+        const sr = span.getBoundingClientRect();
+        const c0 = Math.round((sr.left - screenRect.left) / cellWidth);
+        const c1 = Math.round((sr.right - screenRect.left) / cellWidth);
+        for (let c = Math.max(0, c0); c <= Math.min(window.xtermInstance.cols - 1, c1); c++) {
+          colColors[c] = color;
+        }
+      }
+    }
+
+    // Group consecutive non-space cells into "chunks"
+    let chunk = null;
+    for (let col = 0; col < window.xtermInstance.cols; col++) {
+      const cell = line.getCell(col);
+      if (!cell || cell.getChars() === ' ') {
+        if (chunk && chunk.text.length > 0) { lineChunks.push(chunk); chunk = null; }
+        continue;
+      }
+      const color = colColors[col] || '#e0e0e0';
+      if (!chunk || chunk.fg !== color) {
+        if (chunk && chunk.text.length > 0) { lineChunks.push(chunk); }
+        chunk = { text: '', fg: color, x: col * cellWidth, y: displayRow * cellHeight };
+      }
+      chunk.text += cell.getChars();
+    }
+    if (chunk && chunk.text.length > 0) lineChunks.push(chunk);
+  }
+  return lineChunks;
+}
+
+function snapshotTerminal() {
+  const chunks = readTerminalCells();
+  if (!chunks.length) return [];
+
+  // Pre-render each chunk to an offscreen canvas for fast drawImage
+  effectCtx.font = `${effectFontSize}px ${effectFontFamily}`;
+  effectCtx.textBaseline = 'top';
+
+  for (const c of chunks) {
+    const metrics = effectCtx.measureText(c.text);
+    const w = Math.ceil(metrics.width) + 2;
+    const h = cellHeight + 2;
+    const oc = document.createElement('canvas');
+    oc.width = w; oc.height = h;
+    const octx = oc.getContext('2d');
+    octx.font = `${effectFontSize}px ${effectFontFamily}`;
+    octx.textBaseline = 'top';
+    octx.fillStyle = c.fg;
+    octx.fillText(c.text, 1, 1);
+    c.img = oc;
+    c.w = w;
+    c.h = h;
+  }
+  return chunks;
+}
+
+// ── Effect: Smash Screen (字符掉落) ──
+
+function effectSmashScreen() {
+  if (!window.xtermInstance || !terminalMode || effectRunning) return;
+  effectRunning = true;
+
+  const chunks = snapshotTerminal();
+  if (!chunks.length) { effectRunning = false; return; }
+
+  const xtermScreen = document.querySelector('.xterm-screen');
+  if (xtermScreen) xtermScreen.style.visibility = 'hidden';
+
+  const groundY = effectCanvas.height - cellHeight;  // text bottom touches canvas bottom
+
+  const particles = chunks.map((c) => {
+    const originX = effectCanvas.width / 2;
+    const originY = effectCanvas.height;
+    const cx = c.x + c.w / 2;
+    const cy = c.y + c.h / 2;
+    const dx = cx - originX;
+    const dy = cy - originY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    return {
+      img: c.img, x: c.x, y: c.y, w: c.w, h: c.h,
+      vx: (dx / (dist + 1)) * (3 + Math.random() * 5) * (Math.random() > 0.5 ? 1 : -1),
+      vy: -(Math.random() * 4 + 1),
+      angle: 0, va: (Math.random() - 0.5) * 0.2,
+      gravity: 0.15 + Math.random() * 0.1,
+      opacity: 1,
+      bounces: 0,
+      maxBounces: 1 + Math.floor(Math.random() * 2),
+      bounceFactor: 0.3 + Math.random() * 0.2,
+      landed: false,
+      landedAt: 0,
+      settleFadeDelay: 800 + Math.random() * 1500,
+      fadeRate: 0.008 + Math.random() * 0.006,
+      delay: (dist / (effectCanvas.width + effectCanvas.height)) * 400,
+      started: false, startTime: performance.now(),
+    };
+  });
+
+  const startGlobal = performance.now();
+
+  function animate(now) {
+    const elapsed = now - startGlobal;
+    effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
+    let allDone = true;
+
+    for (const p of particles) {
+      if (!p.started) {
+        if (now - p.startTime < p.delay) {
+          effectCtx.globalAlpha = p.opacity;
+          effectCtx.drawImage(p.img, p.x, p.y);
+          allDone = false; continue;
+        }
+        p.started = true;
+      }
+
+      if (!p.landed) {
+        p.vy += p.gravity;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.angle += p.va;
+
+        if (p.y >= groundY) {
+          p.y = groundY - Math.random() * 4;
+          p.bounces++;
+          if (p.bounces >= p.maxBounces) {
+            p.landed = true;
+            p.landedAt = now;
+            p.vy = 0;
+            p.vx *= 0.1;
+            p.va = 0;
+            p.angle = (Math.random() - 0.5) * Math.PI * 0.6;
+          } else {
+            p.vy = -Math.abs(p.vy) * p.bounceFactor;
+            p.vx *= 0.7;
+            p.va *= 0.5;
+            p.x += (Math.random() - 0.5) * 6;
+          }
+        }
+      } else {
+        const timeSinceLanded = now - p.landedAt;
+        if (timeSinceLanded > p.settleFadeDelay) {
+          p.opacity -= p.fadeRate;
+        }
+        p.x += p.vx * 0.5;
+        p.vx *= 0.95;
+      }
+
+      if (p.opacity <= 0) continue;
+      allDone = false;
+      effectCtx.save();
+      effectCtx.globalAlpha = Math.max(0, p.opacity);
+      effectCtx.translate(p.x + p.w / 2, p.y + p.h / 2);
+      effectCtx.rotate(p.angle);
+      effectCtx.drawImage(p.img, -p.w / 2, -p.h / 2);
+      effectCtx.restore();
+    }
+    effectCtx.globalAlpha = 1;
+
+    if (!allDone && elapsed < 8000) {
+      effectAnimId = requestAnimationFrame(animate);
+    } else {
+      effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
+      if (xtermScreen) xtermScreen.style.visibility = '';
+      effectRunning = false;
+    }
+  }
+  effectAnimId = requestAnimationFrame(animate);
 }
 
 // ==================== WebSocket ====================
