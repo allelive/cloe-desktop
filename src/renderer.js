@@ -583,6 +583,7 @@ let cellWidth = 8;
 let cellHeight = 18;
 const effectFontFamily = "'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace";
 const effectFontSize = 14;
+const colorCache = {};  // className → computed color string (avoids repeated getComputedStyle)
 
 function measureCellMetrics() {
   const rowEl = document.querySelector('.xterm-rows > div');
@@ -613,7 +614,7 @@ function readTerminalCells() {
   // Read actual rendered colors from DOM instead of buffer API
   const rowEls = document.querySelectorAll('.xterm-rows > div');
   const screenEl = document.querySelector('.xterm-screen');
-  const screenRect = screenEl ? screenEl.getBoundingClientRect() : null;
+  // screenEl existence check only — no need for screenRect since we use offsetLeft/offsetWidth
 
   const lineChunks = [];
 
@@ -624,14 +625,19 @@ function readTerminalCells() {
     const rowEl = rowEls[displayRow];
     if (!rowEl) continue;
 
-    // Build column → color map from DOM spans
+    // Build column → color map from DOM spans (cached color per class, offset-based geometry)
     const colColors = new Array(window.xtermInstance.cols).fill(null);
-    if (screenRect) {
+    if (screenEl) {
       for (const span of rowEl.children) {
-        const color = window.getComputedStyle(span).color;
-        const sr = span.getBoundingClientRect();
-        const c0 = Math.round((sr.left - screenRect.left) / cellWidth);
-        const c1 = Math.round((sr.right - screenRect.left) / cellWidth);
+        // Cache getComputedStyle by className — xterm reuses class tokens for same color
+        const cls = span.className;
+        if (!colorCache[cls]) {
+          colorCache[cls] = window.getComputedStyle(span).color;
+        }
+        const color = colorCache[cls];
+        // offsetLeft is relative to the row container — cheaper than getBoundingClientRect
+        const c0 = Math.floor(span.offsetLeft / cellWidth);
+        const c1 = Math.ceil((span.offsetLeft + span.offsetWidth) / cellWidth) - 1;
         for (let c = Math.max(0, c0); c <= Math.min(window.xtermInstance.cols - 1, c1); c++) {
           colColors[c] = color;
         }
