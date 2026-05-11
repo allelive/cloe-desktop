@@ -584,6 +584,8 @@ let cellHeight = 18;
 const effectFontFamily = "'SF Mono', 'Menlo', 'Consolas', 'Courier New', monospace";
 const effectFontSize = 14;
 const colorCache = {};  // className → computed color string (avoids repeated getComputedStyle)
+const canvasPool = {};   // "text|color" → offscreen canvas (reuse for repeated chunks)
+const MAX_PARTICLES = 1000;  // hard cap to prevent memory spike
 
 function measureCellMetrics() {
   const rowEl = document.querySelector('.xterm-rows > div');
@@ -665,27 +667,38 @@ function readTerminalCells() {
 }
 
 function snapshotTerminal() {
-  const chunks = readTerminalCells();
-  if (!chunks.length) return [];
+  const rawChunks = readTerminalCells();
+  if (!rawChunks.length) return [];
+
+  // Enforce particle cap — trim from the end (bottom rows are least visible first)
+  const chunks = rawChunks.length > MAX_PARTICLES
+    ? rawChunks.slice(0, MAX_PARTICLES)
+    : rawChunks;
 
   // Pre-render each chunk to an offscreen canvas for fast drawImage
   effectCtx.font = `${effectFontSize}px ${effectFontFamily}`;
   effectCtx.textBaseline = 'top';
 
   for (const c of chunks) {
-    const metrics = effectCtx.measureText(c.text);
-    const w = Math.ceil(metrics.width) + 2;
-    const h = cellHeight + 2;
-    const oc = document.createElement('canvas');
-    oc.width = w; oc.height = h;
-    const octx = oc.getContext('2d');
-    octx.font = `${effectFontSize}px ${effectFontFamily}`;
-    octx.textBaseline = 'top';
-    octx.fillStyle = c.fg;
-    octx.fillText(c.text, 1, 1);
+    // Reuse offscreen canvas for identical (text, color) pairs
+    const key = `${c.text}|${c.fg}`;
+    let oc = canvasPool[key];
+    if (!oc) {
+      const metrics = effectCtx.measureText(c.text);
+      const w = Math.ceil(metrics.width) + 2;
+      const h = cellHeight + 2;
+      oc = document.createElement('canvas');
+      oc.width = w; oc.height = h;
+      const octx = oc.getContext('2d');
+      octx.font = `${effectFontSize}px ${effectFontFamily}`;
+      octx.textBaseline = 'top';
+      octx.fillStyle = c.fg;
+      octx.fillText(c.text, 1, 1);
+      canvasPool[key] = oc;
+    }
     c.img = oc;
-    c.w = w;
-    c.h = h;
+    c.w = oc.width;
+    c.h = oc.height;
   }
   return chunks;
 }
@@ -694,6 +707,7 @@ function snapshotTerminal() {
 
 function effectSmashScreen() {
   if (!window.xtermInstance || !terminalMode || effectRunning) return;
+  if (!effectCanvas || !effectCtx) return;  // guard against missing canvas
   effectRunning = true;
 
   const chunks = snapshotTerminal();
@@ -796,6 +810,9 @@ function effectSmashScreen() {
     } else {
       effectCtx.clearRect(0, 0, effectCanvas.width, effectCanvas.height);
       if (xtermScreen) xtermScreen.style.visibility = '';
+      // Release particle canvas references for GC (pool entries are kept for reuse)
+      for (const p of particles) { p.img = null; }
+      particles.length = 0;
       effectRunning = false;
     }
   }
